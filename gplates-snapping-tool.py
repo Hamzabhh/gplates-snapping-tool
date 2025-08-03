@@ -146,6 +146,44 @@ def inject_target_as_vertices(target_coords, shape_coords, corridor_half_width_k
     new_coords_forme.append(shape_coords[-1])
     return deduplicate(new_coords_forme), resultats
 
+# === ENTITY SELECTION HELPER ===
+def select_entity_interactively(blocks, label=""):
+    # Step 1: Plate ID
+    ids = sorted(set(str(b["plate_id"]) for b in blocks if b["plate_id"] is not None))
+    print(f"\n🧭 Available Plate IDs {label}:")
+    print(", ".join(ids))
+    chosen_id = input("Your choice: ").strip()
+
+    matching_id = [b for b in blocks if str(b["plate_id"]) == chosen_id]
+    if not matching_id:
+        print("❌ No entities with that Plate ID.")
+        return None
+
+    # Step 2: Time
+    times = sorted(set(str(int(b["time"])) for b in matching_id if b["time"] is not None))
+    print(f"\n🕒 Available times for Plate ID {chosen_id}:")
+    print(", ".join(times))
+    chosen_time = input("Your choice (Ma): ").strip()
+
+    matching_time = [b for b in matching_id if str(int(b["time"])) == chosen_time]
+    if not matching_time:
+        print("❌ No entities with that time.")
+        return None
+
+    # Step 3: Name (only if multiple remain)
+    if len(matching_time) > 1:
+        names = sorted(set(b["name"] for b in matching_time if b["name"]))
+        print(f"\n🏷️ Multiple entities found. Available names:")
+        print(", ".join(names))
+        chosen_name = input("Enter exact name: ").strip()
+        matching_name = [b for b in matching_time if b["name"] == chosen_name]
+        if not matching_name:
+            print("❌ No entity with that name.")
+            return None
+        return matching_name[0]
+    else:
+        return matching_time[0]
+
 # === MAIN MENU ===
 def main():
     while True:
@@ -162,6 +200,7 @@ def main():
             print("❌ Invalid choice.")
             continue
 
+        # --- Modification file ---
         modif_file = input("Enter file to modify (without extension): ").strip() + ".gpml"
         mod_path = os.path.join(layer_folder, modif_file)
         tree_mod, blocks_mod = read_coord_blocks(mod_path)
@@ -170,33 +209,13 @@ def main():
             print("❌ No blocks found in the file.")
             continue
 
-        # Display plate IDs and ages
-        available_ids = sorted(set(str(b["plate_id"]) for b in blocks_mod if b["plate_id"] is not None))
-        available_times = sorted(set(str(int(b["time"])) for b in blocks_mod if b["time"] is not None))
-        print("\n📂 Available in the file:")
-        print(f"Plate IDs: {', '.join(available_ids)}")
-        print(f"Times (Ma): {', '.join(available_times)}")
-
-        print("\n🔧 Select the entity to modify:")
-        mod_id = input("Plate ID: ").strip()
-        mod_time = input("Time (Ma): ").strip()
-
-        def match_entity(block, pid, t):
-            return str(block["plate_id"]) == pid and str(int(block["time"])) == t
-
-        matching_blocks = [b for b in blocks_mod if match_entity(b, mod_id, mod_time)]
-
-        if not matching_blocks:
-            print("❌ No matching entity found in file.")
+        print(f"\n🔧 Select the entity to MODIFY in {modif_file}:")
+        block_to_modify = select_entity_interactively(blocks_mod)
+        if not block_to_modify:
             continue
 
-        if len(matching_blocks) > 1:
-            print("⚠️ Warning: Multiple matches found, only first will be modified.")
-
-        block_to_modify = matching_blocks[0]
-
-        # Ask for target file
-        target_file = input("Enter target file (without extension): ").strip() + ".gpml"
+        # --- Target file ---
+        target_file = input("\nEnter target file (without extension): ").strip() + ".gpml"
         target_path = os.path.join(layer_folder, target_file)
         tree_target, blocks_target = read_coord_blocks(target_path)
 
@@ -205,18 +224,15 @@ def main():
             continue
 
         if target_file == modif_file:
-            print("\n🎯 Target file is the same. Specify the target entity:")
-            tgt_id = input("Target Plate ID: ").strip()
-            tgt_time = input("Target Time (Ma): ").strip()
-            matching_target = [b for b in blocks_target if match_entity(b, tgt_id, tgt_time)]
-            if not matching_target:
-                print("❌ No matching target found.")
+            print(f"\n🎯 Select the TARGET entity in the same file {modif_file}:")
+            block_target = select_entity_interactively(blocks_target)
+            if not block_target:
                 continue
-            coords_target = matching_target[0]["coords"]
+            coords_target = block_target["coords"]
         else:
             coords_target = [pt for b in blocks_target for pt in b["coords"]]
 
-        param = float(input("Tolerance (km) or corridor half-width: ").strip())
+        param = float(input("\nTolerance (km) or corridor half-width: ").strip())
 
         if choice == "1":
             new_coords, _ = snap_vertices(coords_target, block_to_modify["coords"], param)
@@ -229,3 +245,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
